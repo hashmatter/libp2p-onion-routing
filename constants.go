@@ -1,3 +1,7 @@
 package ipfsonion
 
-var STREAM_HANDLER = "/ipfs-onion/1.0/"
+import (
+	proto "github.com/libp2p/go-libp2p-protocol"
+)
+
+var PROTO_ID = proto.ID("/ipfs-onion/1.0/")

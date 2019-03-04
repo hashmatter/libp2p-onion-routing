@@ -2,11 +2,11 @@
 
 Please bear in mind that this is a **highly experimental research project**.
 	
-*ipfs-onion* is an experiment to bring [in-DHT onion routing](https://github.com/gpestana/notes/blob/master/research/metadata_resistant_dht/onion_routing_paper/onion_routing_dht.pdf) to
+`ipfs-onion` is an experiment to bring [in-DHT onion routing](https://github.com/gpestana/notes/blob/master/research/metadata_resistant_dht/onion_routing_paper/onion_routing_dht.pdf) to
 IPFS. 
 
 The main goal of the project is to lay the foundations for what could be a
-string privacy preserving routing protocol over IPFS that uses in-DHT onion routing, 
+strong privacy preserving routing protocol over IPFS that uses in-DHT onion routing, 
 so that a local passive adversary cannot link network requests back to the 
 initiator.
 

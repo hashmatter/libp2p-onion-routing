@@ -24,7 +24,7 @@ import (
 
 var protoId = proto.ID("/ipfs-onion/1.0/")
 
-var rendezvousString = "/ipfs-onion/1.0/example01"
+var rendezvousString = "/ipfs-onion/1.0/example02"
 
 var bootstrapPeers = []string{
 	"/ip4/104.131.131.82/tcp/4001/ipfs/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
@@ -66,10 +66,6 @@ func handleOnionPacket(stream inet.Stream) {
 	log.Println("%v", b)
 }
 
-func handleRelayDiscovery(stream inet.Stream) {
-	log.Println(">> handling new relay discovery")
-}
-
 func newOnionRelayer() (*OnionRelay, ecdsa.PublicKey) {
 	// relay is a libp2p host
 	ctx := context.Background()
@@ -77,14 +73,6 @@ func newOnionRelayer() (*OnionRelay, ecdsa.PublicKey) {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	// sets handler for incoming onion routing packets sent through protocol
-	// /ipfs-onion/1.0/
-	host.SetStreamHandler(protoId, handleOnionPacket)
-
-	// sets handler for incoming onion relay discovery requests. the relay will
-	// answer to this packets with its ECDSA public key
-	host.SetStreamHandler(protoId, handleRelayDiscovery)
 
 	// join the IPFS DHT for peer discovery by creating a kademlia DHT and
 	// connecting to IPFS bootstrap nodes
@@ -123,6 +111,23 @@ func newOnionRelayer() (*OnionRelay, ecdsa.PublicKey) {
 
 	relayPrivKey, _ := ecdsa.GenerateKey(ec.P256(), rand.Reader)
 	relayContext := sphinx.NewRelayerCtx(relayPrivKey)
+
+	// sets handler for incoming onion routing packets sent through protocol
+	// /ipfs-onion/1.0/
+	host.SetStreamHandler(protoId, func(stream inet.Stream) {
+		log.Println(">> handling new relay discovery")
+		pk := relayPrivKey.PublicKey
+		encPubkey := ec.Marshal(pk.Curve, pk.X, pk.Y)
+		_, err := stream.Write(encPubkey)
+		if err != nil {
+			log.Println(err)
+		}
+		stream.Close()
+	})
+
+	// sets handler for incoming onion relay discovery requests. the relay will
+	// answer to this packets with its ECDSA public key
+	//host.SetStreamHandler(protoId, handleRelayDiscovery)
 
 	return &OnionRelay{
 		host: host,

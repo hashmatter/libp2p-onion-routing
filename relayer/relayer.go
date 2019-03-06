@@ -1,30 +1,37 @@
 package main
 
 import (
-	"bufio"
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	ec "crypto/elliptic"
 	"crypto/rand"
-	sphinx "github.com/hashmatter/p3lib/sphinx"
+	"encoding/gob"
+	"io/ioutil"
+	"log"
+	"os"
+	"os/signal"
+	"time"
+
 	cid "github.com/ipfs/go-cid"
 	ipfsaddr "github.com/ipfs/go-ipfs-addr"
 	libp2p "github.com/libp2p/go-libp2p"
 	host "github.com/libp2p/go-libp2p-host"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	inet "github.com/libp2p/go-libp2p-net"
+	//peer "github.com/libp2p/go-libp2p-peer"
 	pstore "github.com/libp2p/go-libp2p-peerstore"
 	proto "github.com/libp2p/go-libp2p-protocol"
+	ma "github.com/multiformats/go-multiaddr"
 	mh "github.com/multiformats/go-multihash"
-	"log"
-	"os"
-	"os/signal"
-	"time"
+
+	"github.com/hashmatter/p3lib/sphinx"
 )
 
-var protoId = proto.ID("/ipfs-onion/1.0/")
+var protoDiscovery = proto.ID("/ipfs-onion/1.0/discovery")
+var protoPacket = proto.ID("/ipfs-onion/1.0/packet")
 
-var rendezvousString = "/ipfs-onion/1.0/example02"
+var rendezvousString = "/ipfs-onion/1.0/example07"
 
 var bootstrapPeers = []string{
 	"/ip4/104.131.131.82/tcp/4001/ipfs/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
@@ -46,24 +53,12 @@ func main() {
 	// identity as a relayer. The relay registers itself as an IPFS provider of a
 	// predefined string, so that an initiator can discover them.
 	r, pub := newOnionRelayer()
-	log.Printf(">> %v \n", r.host.Addrs(), pub.X)
-	log.Printf(">> %v \n", pub.X)
+	log.Printf(">> %v, %v\n", r.host.Addrs(), pub.X)
 	log.Printf(">> %v \n", r.host.ID())
 
 	// keeps connection on until SIGINT (ctrl+c)
 	handleExit(r.host)
 	select {}
-}
-
-func handleOnionPacket(stream inet.Stream) {
-	log.Println(">> handling new packet")
-	buf := bufio.NewReader(stream)
-	b, err := buf.ReadBytes('\n')
-	if err != nil {
-		log.Fatal(err)
-	}
-	// do something: verify, decrypt, forward
-	log.Println("%v", b)
 }
 
 func newOnionRelayer() (*OnionRelay, ecdsa.PublicKey) {
@@ -76,7 +71,7 @@ func newOnionRelayer() (*OnionRelay, ecdsa.PublicKey) {
 
 	// join the IPFS DHT for peer discovery by creating a kademlia DHT and
 	// connecting to IPFS bootstrap nodes
-	log.Println(">> inits relayer kad")
+	log.Println(">> INIT | relayer kad")
 
 	kad, err := dht.New(ctx, host)
 	if err != nil {
@@ -96,7 +91,7 @@ func newOnionRelayer() (*OnionRelay, ecdsa.PublicKey) {
 	v1b := cid.V1Builder{Codec: cid.Raw, MhType: mh.SHA2_256}
 	rendezvousPoint, _ := v1b.Sum([]byte(rendezvousString))
 
-	log.Printf(">> registering as relayer at [%v] (%v)\n",
+	log.Printf(">> REGISTER | relayer at [%v] (%v)\n",
 		rendezvousString, rendezvousPoint)
 
 	tctx, cancel := context.WithTimeout(ctx, time.Second*10)
@@ -107,15 +102,15 @@ func newOnionRelayer() (*OnionRelay, ecdsa.PublicKey) {
 
 	// onion relay identity (pub key) must be detatched from host identity, so
 	// create an ephemeral identity for relayer
-	log.Printf(">> setting up relayer context\n")
+	log.Printf(">> SETTING UP | relayer context\n")
 
 	relayPrivKey, _ := ecdsa.GenerateKey(ec.P256(), rand.Reader)
 	relayContext := sphinx.NewRelayerCtx(relayPrivKey)
 
 	// sets handler for incoming onion routing packets sent through protocol
 	// /ipfs-onion/1.0/
-	host.SetStreamHandler(protoId, func(stream inet.Stream) {
-		log.Println(">> handling new relay discovery")
+	host.SetStreamHandler(protoDiscovery, func(stream inet.Stream) {
+		log.Println(">> DISCOVER | request")
 		pk := relayPrivKey.PublicKey
 		encPubkey := ec.Marshal(pk.Curve, pk.X, pk.Y)
 		_, err := stream.Write(encPubkey)
@@ -125,9 +120,72 @@ func newOnionRelayer() (*OnionRelay, ecdsa.PublicKey) {
 		stream.Close()
 	})
 
+	// handles a new onion packet
+	host.SetStreamHandler(protoPacket, func(stream inet.Stream) {
+		out, err := ioutil.ReadAll(stream)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		var packet sphinx.Packet
+		r := bytes.NewReader(out)
+
+		dec := gob.NewDecoder(r)
+		err = dec.Decode(&packet)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		log.Println("RECEIVED | onion packet")
+		log.Println(packet)
+
+		nextAddr, nextPacket, err := relayContext.ProcessPacket(&packet)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		// checks if it is exit relayer
+		if nextPacket.IsLast() {
+			log.Println("--- LAST PACKET ---")
+			log.Println(nextPacket.Payload)
+			return
+		}
+
+		// wires packet to next relay
+		var addrs []ma.Multiaddr
+		addrs = append(addrs, nextAddr)
+		// hack, here we should be using the next relay pubkey to derive the peer.ID
+		//fakeId, err := peer.IDFromString("Qma9T5YraSnpRDZqRR4krcSJabThc8nwZuJV3LercPHufi")
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		nextPid := &pstore.PeerInfo{
+			ID:    host.ID(),
+			Addrs: addrs,
+		}
+
+		var buf bytes.Buffer
+		enc := gob.NewEncoder(&buf)
+		err = enc.Encode(&packet)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		// forward packet to first relay:
+		stream, err = host.NewStream(context.Background(), nextPid.ID, protoPacket)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		_, err = stream.Write(buf.Bytes())
+		if err != nil {
+			log.Fatal(err)
+		}
+		stream.Close()
+	})
+
 	// sets handler for incoming onion relay discovery requests. the relay will
 	// answer to this packets with its ECDSA public key
-	//host.SetStreamHandler(protoId, handleRelayDiscovery)
 
 	return &OnionRelay{
 		host: host,
@@ -141,7 +199,7 @@ func handleExit(h host.Host) {
 	signal.Notify(c, os.Interrupt)
 	go func() {
 		for _ = range c {
-			log.Println(">> shutting host down....")
+			log.Println(">> SHUTTING down....")
 			err := h.Close()
 			if err != nil {
 				log.Println(err)

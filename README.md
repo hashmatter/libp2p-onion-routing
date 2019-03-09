@@ -1,59 +1,25 @@
-# ipfs-onion
+## libp2p-onion-routing
 
-Please bear in mind that this is a **highly experimental research project**.
-	
-`ipfs-onion` is an experiment to bring [in-DHT onion routing](https://github.com/gpestana/notes/blob/master/research/metadata_resistant_dht/onion_routing_paper/onion_routing_dht.pdf) to
-IPFS. 
+This is an example of how to use [p3lib-sphinx](https://github.com/hashmatter/p3lib)
+to implement an onion routing protocol on top of a DHT overlay. This example
+shows how a client can construct a onion packet which will be forward through 
+a secure circuit of libp2p nodes. The circuit nodes (relays) are able to process
+the received by "peeling" a layer of the onion and forward the packet to the
+next relay. Once the packet has been all processed and forwarded by all relays 
+in the circuit, the last relay will have enough information to perform the DHT 
+request delegated by the initiator (i.e. the initial node which created the 
+onion packet). This *delegation pattern* in combination with provably secure
+onion encryption is 
 
 The main goal of the project is to lay the foundations for what could be a
-strong privacy preserving routing protocol over IPFS that uses in-DHT onion routing, 
-so that a local passive adversary cannot link network requests back to the 
-initiator.
+strong privacy preserving routing protocol over DHTs to protect users from 
+local passive adversaries that aim at linking DHT lookups and its initiator.
 
-`ipfs-onion` library consists of primitives for clients to wrap kad requests in
-multiple encryption layers and for servers (relays) to decrypt,
-verify and forward onion routing packets. It defines a new multistream protocol
-`/in-dht-onion/1.0` and handles relay register and discovery on IPFS.
-
-## Protocol
-
-Peers using ipfs-routing encode streams using the multistream protocol 
-`/in-dht-onion/1.0`.
-
-The onion header and packet construction uses an [adapted](https://eprint.iacr.org/2009/628.pdf) [sphinx packet format](https://cypherpunks.ca/~iang/pubs/Sphinx_Oakland09.pdf).
-
-### Relay registration and discovery
-
-> TBD
-
-### Onion circuit building
-
-> TBD
-
-### API
-
-**1. Relay**
-
-```golang
-
-import (
-	relay "github.com/hashmatter/ipfs-onion/relay"
-)
-
-// ...
-```
-
-**2. Client**
-
-```golang
-
-import (
- client "github.com/hashmatter/ipfs-onion/client"
-)
-
-// ...
-```
-
+The code in this repository is part of a **highly experimental research project**
+to bring [onion routing](https://github.com/gpestana/notes/blob/master/research/metadata_resistant_dht/onion_routing_paper/onion_routing_dht.pdf) to be used on top of IPFS and other P2P networks
+The purpose of this code is for demo purposes only. Please bear in mind that the relay discovery
+protocol used in the example will defeat the purposes of onion routing security
+by leaking to the network which relays are used 
 
 ## Further reading
 

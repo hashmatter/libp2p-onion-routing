@@ -19,10 +19,9 @@ import (
 	host "github.com/libp2p/go-libp2p-host"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	inet "github.com/libp2p/go-libp2p-net"
-	//peer "github.com/libp2p/go-libp2p-peer"
+	peer "github.com/libp2p/go-libp2p-peer"
 	pstore "github.com/libp2p/go-libp2p-peerstore"
 	proto "github.com/libp2p/go-libp2p-protocol"
-	ma "github.com/multiformats/go-multiaddr"
 	mh "github.com/multiformats/go-multihash"
 
 	"github.com/hashmatter/p3lib/sphinx"
@@ -31,7 +30,7 @@ import (
 var protoDiscovery = proto.ID("/ipfs-onion/1.0/discovery")
 var protoPacket = proto.ID("/ipfs-onion/1.0/packet")
 
-var rendezvousString = "/ipfs-onion/1.0/example07"
+var rendezvousString = "/ipfs-onion/1.0/exampleAB"
 
 var bootstrapPeers = []string{
 	"/ip4/104.131.131.82/tcp/4001/ipfs/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
@@ -53,8 +52,7 @@ func main() {
 	// identity as a relayer. The relay registers itself as an IPFS provider of a
 	// predefined string, so that an initiator can discover them.
 	r, pub := newOnionRelayer()
-	log.Printf(">> %v, %v\n", r.host.Addrs(), pub.X)
-	log.Printf(">> %v \n", r.host.ID())
+	log.Printf(">> %v\n%v\n", r.host.ID().Pretty(), pub)
 
 	// keeps connection on until SIGINT (ctrl+c)
 	handleExit(r.host)
@@ -139,49 +137,64 @@ func newOnionRelayer() (*OnionRelay, ecdsa.PublicKey) {
 		log.Println("RECEIVED | onion packet")
 		log.Println(packet)
 
-		nextAddr, nextPacket, err := relayContext.ProcessPacket(&packet)
+		na, nextPacket, err := relayContext.ProcessPacket(&packet)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal("ERR | process packet: ", err)
 		}
+
+		log.Println("PROCESSED | onion packet")
+		log.Println(nextPacket)
 
 		// checks if it is exit relayer
 		if nextPacket.IsLast() {
-			log.Println("--- LAST PACKET ---")
-			log.Println(nextPacket.Payload)
+			log.Println("LAST PACKET | exit relayer information: \n")
+			log.Println("Payload: ", string(nextPacket.Payload[:]))
+			log.Println("Routing Info: ", string(nextPacket.Header.RoutingInfo[:]))
+
 			return
 		}
 
-		// wires packet to next relay
-		var addrs []ma.Multiaddr
-		addrs = append(addrs, nextAddr)
-		// hack, here we should be using the next relay pubkey to derive the peer.ID
-		//fakeId, err := peer.IDFromString("Qma9T5YraSnpRDZqRR4krcSJabThc8nwZuJV3LercPHufi")
+		// get peerinfo based on address host.FindPeer()
+		nextPid, err := nextRelayID(na[:])
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		nextPid := &pstore.PeerInfo{
-			ID:    host.ID(),
-			Addrs: addrs,
+		log.Println("NEXT RELAY | find peer", nextPid)
+		pinfo, err := kad.FindPeer(ctx, nextPid)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		log.Println("NEXT RELAY | connect", nextPid.Pretty())
+		err = host.Connect(ctx, pinfo)
+		if err != nil {
+			log.Println(nextPid)
+			log.Fatal("connect to host: ", err)
 		}
 
 		var buf bytes.Buffer
 		enc := gob.NewEncoder(&buf)
-		err = enc.Encode(&packet)
+		err = enc.Encode(nextPacket)
 		if err != nil {
+			log.Fatal("encode packet ", err)
 			log.Fatal(err)
 		}
 
-		// forward packet to first relay:
-		stream, err = host.NewStream(context.Background(), nextPid.ID, protoPacket)
+		// forward packet to next relay:
+		log.Println("FORWARD | next relay", nextPid)
+		stream, err = host.NewStream(context.Background(), nextPid, protoPacket)
 		if err != nil {
+			log.Fatal("create out stream ", err)
 			log.Fatalln(err)
 		}
 		_, err = stream.Write(buf.Bytes())
 		if err != nil {
+			log.Fatal("write to stream ", err)
 			log.Fatal(err)
 		}
 		stream.Close()
+		log.Println("FORWARD | successful")
 	})
 
 	// sets handler for incoming onion relay discovery requests. the relay will
@@ -192,6 +205,24 @@ func newOnionRelayer() (*OnionRelay, ecdsa.PublicKey) {
 		ctx:  relayContext,
 		rdv:  rendezvousString,
 	}, relayPrivKey.PublicKey
+}
+
+func nextRelayID(na []byte) (peer.ID, error) {
+	np, err := mh.Decode(na[:36])
+	if err != nil {
+		return "", err
+	}
+
+	npid, err := mh.Cast(np.Digest[:])
+	if err != nil {
+		return "", err
+	}
+
+	nextPid, err := peer.IDB58Decode(npid.B58String())
+	if err != nil {
+		return "", err
+	}
+	return nextPid, nil
 }
 
 func handleExit(h host.Host) {

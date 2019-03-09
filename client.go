@@ -20,13 +20,12 @@ import (
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	pstore "github.com/libp2p/go-libp2p-peerstore"
 	proto "github.com/libp2p/go-libp2p-protocol"
-	ma "github.com/multiformats/go-multiaddr"
 	mh "github.com/multiformats/go-multihash"
 
 	"github.com/hashmatter/p3lib/sphinx"
 )
 
-var rendezvousString = "/ipfs-onion/1.0/example07"
+var rendezvousString = "/ipfs-onion/1.0/exampleAB"
 
 var protoDiscovery = proto.ID("/ipfs-onion/1.0/discovery")
 var protoPacket = proto.ID("/ipfs-onion/1.0/packet")
@@ -45,7 +44,7 @@ func main() {
 	// routing.
 	host, privKey, ctx, kad := newOnionClient()
 
-	var relayAddrs []ma.Multiaddr
+	var relayAddrs [][]byte
 	var relayPubKeys []ecdsa.PublicKey
 
 	numRelays := 3
@@ -66,7 +65,6 @@ func main() {
 			if err == nil {
 				// connection was successfull
 				log.Printf(">> CONNECTED | %v", pi.ID)
-				log.Println(pi.Addrs)
 				pis = append(pis, pi)
 				if len(pis) >= numRelays {
 					c <- pis
@@ -79,11 +77,11 @@ func main() {
 
 	select {
 	case relays := <-c:
-		log.Printf(">> getting relays pubkeys")
 		// get relays pubkey
 		for _, r := range relays {
 			// builds relayAddrs with same sorting as relayPubKeys
-			relayAddrs = append(relayAddrs, selectAddr(r.Addrs))
+			encPeerID, err := mh.Encode([]byte(r.ID), mh.SHA2_256)
+			relayAddrs = append(relayAddrs, encPeerID)
 			pis = relays
 
 			stream, err := host.NewStream(context.Background(), r.ID, protoDiscovery)
@@ -98,7 +96,8 @@ func main() {
 			x, y := ec.Unmarshal(curve, out)
 			pubKey := ecdsa.PublicKey{Curve: curve, X: x, Y: y}
 			relayPubKeys = append(relayPubKeys, pubKey)
-			fmt.Printf(">> RELAY PUBKEY: %v\n", pubKey)
+
+			fmt.Printf(">> RELAY | id:  %v\n pubKey %v\n\n", r.ID, pubKey)
 		}
 
 	case <-time.After(time.Second * time.Duration(timeout)):
@@ -107,16 +106,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	// TODO: change for libp2p host
-	finalAddr, _ := ma.NewMultiaddr("/ip4/127.0.0.1/udp/1234")
+	// TODO: change for online libp2p host
+	finalAddr := []byte("QmPa4rVE5QoMyuxPEtq2tS1cjBAnpenFkb3rYTNkZsRRVz")
 
 	log.Println(">> CONSTRUCTING onion packet..")
 	// initializes onion packet payload
 	var payload [256]byte
 	copy(payload[:], []byte("example onion routing")[:])
 
-	// builds onion packet
-	fmt.Println(relayAddrs)
 	packet, err :=
 		sphinx.NewPacket(&privKey, relayPubKeys, finalAddr, relayAddrs, payload)
 	if err != nil {
@@ -145,19 +142,6 @@ func main() {
 
 	log.Println(">> SENT | onion packet sent!")
 	fmt.Println(packet)
-}
-
-// super hack for selecting a multiaddress that is either ip4 or ip6 (and not
-// /p2p-circuit (NOT SAFE)
-func selectAddr(addrs []ma.Multiaddr) ma.Multiaddr {
-	var res ma.Multiaddr
-	for _, a := range addrs {
-		if a.String()[1] == "i"[0] {
-			res = a
-			break
-		}
-	}
-	return res
 }
 
 func newOnionClient() (host.Host, ecdsa.PrivateKey, context.Context, *dht.IpfsDHT) {

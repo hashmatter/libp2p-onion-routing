@@ -1,27 +1,35 @@
 ## libp2p-onion-routing
 
-`libp2p-onion-routing` shows how to use onion routing for what could be a
-strong privacy preserving routing protocol over DHTs which protect users from 
-local passive adversaries that spoof the network to link DHT lookups and its 
-initiators.
+`libp2p-onion-routing` demonstrates how to use onion routing for a
+strong privacy preserving routing protocol to be used over DHTs and other
+decentralized networks. The onion routing aims at protecting users from 
+local passive adversaries that spoof DHT requests to link lookups to its initiators.
 
-![Presentation video](./_presentation/player.jpg)
-Check the presentation where we explain how to setup delegated lookups in libp2p
-with onion routing.
+![usage-example](https://media.giphy.com/media/xT0xetJEkloDtbVHSU/giphy.gif)
 
-We show how to use [p3lib-sphinx](https://github.com/hashmatter/p3lib)
-to implement an onion routing protocol on top of a DHT overlay. This example
-shows how a client can construct a onion packet which will be forward through 
-a secure circuit of libp2p nodes. The circuit nodes (relays) are able to process
+Check the [recorded presentation](https://media.giphy.com/media/xT0xetJEkloDtbVHSU/giphy.gif) 
+where we go through the code and explain how use delegated lookups in 
+libp2p with onion routing and [p3lib-sphinx](https://github.com/hashmatter/p3lib).
+
+### How?
+
+The code in this repo shows how a DHT client can use the library
+[p3lib-sphinx](https://github.com/hashmatter/p3lib) to construct a onion packet 
+which and forward it through a secure circuit of libp2p nodes.
+
+The circuit nodes (relays) are able to process
 the received by "peeling" a layer of the onion and forward the packet to the
 next relay. Once the packet has been all processed and forwarded by all relays 
 in the circuit, the last relay will have enough information to perform the DHT 
 request delegated by the initiator (i.e. the initial node which created the 
-onion packet). This *delegation pattern* in combination with provably secure
+onion packet). The primitives for relays to process onion packets are also
+implemented by [p3lib-sphinx](https://github.com/hashmatter/p3lib).
+
+This *delegation pattern* in combination with provably secure
 onion encryption is similar to what is used by other anonymous P2P networks,
 such as [Tor](https://torproject.org).
 
-## Open problems
+### Open problems
 
 - [ ] Implementation of SURBs in [p3lib-sphinx](https://github.com/hashmatter/p3lib)
 
@@ -41,7 +49,7 @@ distributed hash tables and P2P networks. If you are interested in discussing
 and working on these problems, check what [hashmatter](https://hashmatter.com)
 has been working on and reach out!
 
-## Please note!
+### Please note!
 
 The code in this repository is part of an experimental research project to 
 implement practical privacy preserving network protocols and primitives. The

@@ -13,9 +13,82 @@ libp2p with onion routing and [p3lib-sphinx](https://github.com/hashmatter/p3lib
 
 ### How?
 
-The code in this repo shows how a DHT client can use the library
-[p3lib-sphinx](https://github.com/hashmatter/p3lib) to construct a onion packet 
-which and forward it through a secure circuit of libp2p nodes.
+[p3lib-sphinx](https://github.com/hashmatter/p3lib) is used to construct and
+process the onion packet.
+
+**1) *Initiator* selects set of reay nodes and gets its public keys and addresses**
+
+```go
+// discovers and connects to numRelays relays
+pinfo, relayAddrs, relayPubKeys, err := selectRelays(ctx, numRelays, timeout,
+host, kad)
+```
+
+In production, the `selectRelays()` should select a set of relays anonymously,
+i.e., no one should be able to infer which relays were selected.
+
+**2) *Initiator* constructs the onion packet**
+
+```go
+// the payload consist of information for the exit relay (last relay in the
+// circuit) to perform the a DHT lookup. in this example, the initiator
+// delegates the lookup of the content addressed file 'QmSAR...K8Eem721p'
+var payload [256]byte
+copy(payload[:], []byte("GET QmSAR9Zw6bvVqMt35uBfnETaWkmxhZ6mWyQeRK8Eem721p")[:])
+
+// the final address is not relevant in this context since the exit relay will
+// perform a network request (DHT lookup) rather than
+// connecting to a specific peer.
+finalAddr := []byte("")
+
+// uses p3lib-sphinx library to construct an onion routing packet
+packet, err := sphinx.NewPacket(&privKey, relayPubKeys, finalAddr, relayAddrs, payload)
+```
+
+**3) *Initiator* encodes and forwards the onion packet to first relay**
+
+```go
+// encodes onion packet and wires it to the first relay in the circuit
+var buf bytes.Buffer
+enc := gob.NewEncoder(&buf)
+enc.Encode(packet)
+
+// forward packet to first relay. the relay that the packet is relayed must
+// map to the first relay in the input when constructing the onion packet
+firstRelay := pinfo[0]
+stream, _ := host.NewStream(context.Background(), firstRelay.ID, protoPacket)
+_, err = stream.Write(buf.Bytes())
+stream.Close()
+```
+
+**4) *Relay* receives the onion packet, processes it and gets the address
+of next relay**
+
+```go
+var packet sphinx.Packet
+out, _ := ioutil.ReadAll(stream)
+
+r := bytes.NewReader(out)
+
+dec := gob.NewDecoder(r)
+dec.Decode(&packet)
+
+nextAddr, nextPacket, err := relayContext.ProcessPacket(&packet)
+```
+
+**5) Step 5 repeats until last relay processes the packet**
+
+**6) After processing the packet, the *last Relay* performs DHT lookup set by
+initiator**
+
+```go
+if nextPacket.IsLast() {
+	log.Println("LAST PACKET | exit relayer information: \n")
+
+	performDelegatedRequest(nextPacket.Payload[:])
+	return
+}
+```
 
 The circuit nodes (relays) are able to process
 the received by "peeling" a layer of the onion and forward the packet to the
@@ -49,6 +122,11 @@ distributed hash tables and P2P networks. If you are interested in discussing
 and working on these problems, check what [hashmatter](https://hashmatter.com)
 has been working on and reach out!
 
+### Why?
+
+Because we all want security, privacy and decentralized networks to go 
+mainstream! Also check [In Pursuit of Private DHTs](https://www.gpestana.com/blog/in-pursuit-of-private-dhts/)!
+
 ### Please note!
 
 The code in this repository is part of an experimental research project to 
@@ -62,6 +140,8 @@ to all the relays in the circuit. This is not safe and should not be used in
 production.
 
 ## Further reading
+
+[0] [Privacy preserving DHTs](https://github.com/gpestana/notes/issues/8)
 
 [1] [Privacy preserving lookups with In-DHT Onion Routing](https://github.com/gpestana/notes/blob/master/research/metadata_resistant_dht/onion_routing_paper/onion_routing_dht.pdf/)
 

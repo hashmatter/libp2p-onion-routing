@@ -5,9 +5,7 @@ strong privacy preserving routing protocol to be used over DHTs and other
 decentralized networks. The onion routing aims at protecting users from 
 local passive adversaries that spoof DHT requests to link lookups to its initiators.
 
-![usage-example](https://media.giphy.com/media/xT0xetJEkloDtbVHSU/giphy.gif)
-
-Check the [recorded presentation](https://media.giphy.com/media/xT0xetJEkloDtbVHSU/giphy.gif) 
+We will release a video tutorial  
 where we go through the code and explain how use delegated lookups in 
 libp2p with onion routing and [p3lib-sphinx](https://github.com/hashmatter/p3lib).
 

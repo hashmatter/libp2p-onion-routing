@@ -14,7 +14,7 @@ libp2p with onion routing and [p3lib-sphinx](https://github.com/hashmatter/p3lib
 [p3lib-sphinx](https://github.com/hashmatter/p3lib) is used to construct and
 process the onion packet.
 
-**1) *Initiator* selects set of reay nodes and gets its public keys and addresses**
+**1) *Initiator* selects set of relay nodes and gets its public keys and addresses**
 
 ```go
 // discovers and connects to numRelays relays

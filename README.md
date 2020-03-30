@@ -81,7 +81,7 @@ initiator**
 
 ```go
 if nextPacket.IsLast() {
-	log.Println("LAST PACKET | exit relayer information: \n")
+	log.Println("LAST PACKET | exit relayer information:")
 
 	performDelegatedRequest(nextPacket.Payload[:])
 	return
